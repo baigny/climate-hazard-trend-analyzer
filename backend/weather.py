@@ -2,6 +2,8 @@
 from datetime import datetime, timezone, timedelta, date
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
+from email.utils import parsedate_to_datetime
+import logging
 from backend.concurrency import KeyedLocks
 import time
 import httpx
@@ -10,7 +12,29 @@ ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MODEL = "era5_seamless"
 WEATHER_VERSION = "daily-tmax-precip-wind-v3"
 _fetch_locks = KeyedLocks()
-_upstream_slots = BoundedSemaphore(6)
+_upstream_slots = BoundedSemaphore(1)
+_next_weather_request = 0.0
+_logger = logging.getLogger(__name__)
+
+
+def upstream_reason(response):
+    try:
+        payload = response.json()
+        return str(payload.get("reason", "")) if isinstance(payload, dict) else ""
+    except ValueError:
+        return ""
+
+
+def retry_after_seconds(response):
+    """Honor both Retry-After formats; allow a minute for the free API window."""
+    value = response.headers.get("Retry-After", "")
+    try:
+        return max(1, int(value))
+    except ValueError:
+        try:
+            return max(1, int((parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()))
+        except (ValueError, TypeError, OverflowError):
+            return 3600 if any(word in upstream_reason(response).lower() for word in ("daily", "hourly")) else 60
 
 
 def cache_key(lat, lon, year, tz):
@@ -20,13 +44,29 @@ def cache_key(lat, lon, year, tz):
 def fetch_batch(store, lat, lon, years, tz, client):
     """Fetch up to ten contiguous missing years with one upstream request."""
     params = {"latitude": lat, "longitude": lon, "start_date": f"{years[0]}-01-01", "end_date": f"{years[-1]}-12-31", "daily": "temperature_2m_max,precipitation_sum,wind_speed_10m_max", "temperature_unit": "celsius", "precipitation_unit": "mm", "wind_speed_unit": "kmh", "timezone": tz, "models": MODEL}
+    global _next_weather_request
     with _upstream_slots:
         for attempt in range(3):
+            wait = _next_weather_request - time.monotonic()
+            if wait > 0:
+                # Long quotas should be reported rather than occupying a worker.
+                if wait > 120:
+                    response = httpx.Response(429, headers={"Retry-After": str(int(wait) + 1)}, request=httpx.Request("GET", ARCHIVE_URL))
+                    response.raise_for_status()
+                time.sleep(wait)
             try:
                 response = client.get(ARCHIVE_URL, params=params)
+                # Decades of data count as many API calls. Space all locations
+                # and analysis/map consumers together instead of sending bursts.
+                _next_weather_request = time.monotonic() + 3 * len(years)
                 if response.status_code == 429 or response.status_code >= 500:
+                    delay = retry_after_seconds(response) if response.status_code == 429 else 2 ** (attempt + 1)
+                    _next_weather_request = max(_next_weather_request, time.monotonic() + delay)
+                    reason = upstream_reason(response)
+                    _logger.warning("Weather upstream status=%s reason=%s retry_after=%s", response.status_code, str(reason)[:200], delay)
+                    if response.status_code == 429 and (delay > 120 or "daily" in str(reason).lower() or "hourly" in str(reason).lower()):
+                        response.raise_for_status()
                     if attempt < 2:
-                        time.sleep(.5 * 2 ** attempt)
                         continue
                 response.raise_for_status()
                 payload = response.json()

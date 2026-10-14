@@ -40,7 +40,7 @@ from backend.catalogs import (
 )
 from backend.flood import load_discharge
 from backend.storage import Store
-from backend.weather import load_weather, MODEL
+from backend.weather import load_weather, MODEL, retry_after_seconds
 from backend.concurrency import KeyedLocks
 from backend.security import APIBoundary, HEADERS
 from backend.presentation import present_analysis
@@ -49,6 +49,13 @@ from backend.places import nearest_place, search_key
 load_dotenv(Path(__file__).parent / ".env")
 DATA = Path(__file__).parent / "data/locations"
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def weather_service_error(exc):
+    if exc.response.status_code == 429:
+        delay = retry_after_seconds(exc.response)
+        return HTTPException(503, f"The historical weather provider's request limit was reached. Retry in {delay} seconds. Previously cached locations and periods remain available.", headers={"Retry-After": str(delay)})
+    return HTTPException(502, "Historical weather service is temporarily unavailable. Retry shortly.")
 
 
 @asynccontextmanager
@@ -217,7 +224,7 @@ def create_analysis(body: AnalysisInput, request: Request, include_events: bool 
                 data, hits, years = load_selection_observations(store, body, points)
                 result = analyze(data, body.start_year, body.end_year, body.hazard)
             except httpx.HTTPStatusError as exc:
-                raise HTTPException(503 if exc.response.status_code == 429 else 502, "Historical weather service is temporarily unavailable. Retry shortly.") from exc
+                raise weather_service_error(exc) from exc
             except httpx.HTTPError as exc:
                 raise HTTPException(504, "Historical weather request timed out or could not connect. Retry shortly.") from exc
             except ValueError as exc:
@@ -341,7 +348,7 @@ def analysis_series(
                 point["period"] = f"{point['period']} {year}"
         return series
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(503 if exc.response.status_code == 429 else 502, "Historical weather service is temporarily unavailable. Retry shortly.") from exc
+        raise weather_service_error(exc) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(504, "Historical weather request timed out or could not connect. Retry shortly.") from exc
     except ValueError as exc:

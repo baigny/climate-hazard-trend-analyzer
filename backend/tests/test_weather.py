@@ -6,6 +6,48 @@ from backend.concurrency import KeyedLocks
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def upstream_clock(monkeypatch):
+    from types import SimpleNamespace
+    clock = {"now": 0.0, "sleeps": []}
+    def sleep(seconds):
+        clock["sleeps"].append(seconds)
+        clock["now"] += seconds
+    monkeypatch.setattr(weather, "time", SimpleNamespace(monotonic=lambda: clock["now"], sleep=sleep))
+    monkeypatch.setattr(weather, "_next_weather_request", 0.0)
+    return clock
+
+
+def test_rate_limit_waits_for_retry_after_and_then_persists(upstream_clock):
+    class Store:
+        def __init__(self): self.docs = {}
+        def put_many(self, collection, values):
+            for key, value in values: self.docs[(collection, key)] = value
+        def get(self, collection, key): return self.docs.get((collection, key))
+    calls = []
+    class Client:
+        def get(self, url, params):
+            calls.append(upstream_clock["now"])
+            if len(calls) == 1:
+                return httpx.Response(429, headers={"Retry-After": "45"}, request=httpx.Request("GET", url))
+            return httpx.Response(200, json={"daily_units": {"temperature_2m_max": "°C", "precipitation_sum": "mm", "wind_speed_10m_max": "km/h"}, "daily": {"time": ["2000-01-01"], "temperature_2m_max": [30], "precipitation_sum": [2], "wind_speed_10m_max": [20]}}, request=httpx.Request("GET", url))
+    assert weather.fetch_batch(Store(), 17, 78, [2000], "UTC", Client())[2000][0]["tmax"] == 30
+    assert calls == [0.0, 45.0]
+
+
+def test_daily_quota_does_not_retry_or_send_other_batches(upstream_clock):
+    calls = []
+    class Client:
+        def get(self, url, params):
+            calls.append(params)
+            return httpx.Response(429, json={"reason": "Daily API request limit exceeded"}, request=httpx.Request("GET", url))
+    for years in ([2000], [2001]):
+        with pytest.raises(httpx.HTTPStatusError):
+            weather.fetch_batch(None, 17, 78, years, "UTC", Client())
+    assert len(calls) == 1
+    assert not upstream_clock["sleeps"]
+
+
 def test_different_keys_can_work_concurrently_and_release():
     locks, entered = KeyedLocks(), Barrier(2)
     def work(key):

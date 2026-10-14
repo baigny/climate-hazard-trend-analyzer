@@ -18,6 +18,18 @@ def payload():
     return {"location":{"name":"Hyderabad","country":"India","state":"Telangana","latitude":17.385,"longitude":78.4867,"timezone":"Asia/Kolkata"},"start_year":2011,"end_year":2020}
 
 
+def test_weather_rate_limit_explains_failure_and_preserves_retry_after(client, monkeypatch):
+    import httpx
+    def limited(*args):
+        response = httpx.Response(429, headers={"Retry-After": "120"}, request=httpx.Request("GET", "https://archive-api.open-meteo.com/v1/archive"))
+        response.raise_for_status()
+    monkeypatch.setattr(main, "load_weather", limited)
+    response = client.post("/api/analyses", json=payload())
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "120"
+    assert "request limit" in response.json()["detail"]
+
+
 @pytest.mark.parametrize("query,expected", [("sao paulo", "São Paulo"), ("MUNCHEN", "München"), ("東京", "東京")])
 def test_worldwide_city_search_preserves_names_and_matches_accents(client, monkeypatch, query, expected):
     monkeypatch.setattr(main, "read_list", lambda _: [

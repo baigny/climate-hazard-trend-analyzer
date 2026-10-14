@@ -56,8 +56,14 @@ Build a simple full-stack app to explore historical climate hazards for a select
 - [x] Verify the local analysis flow, charts, and exports.
 - [x] Prepare Docker and deployment configuration.
 - [x] Document installation, configuration, and run commands in README.
-- [ ] Deploy publicly and verify a complete analysis on the hosted app.
-- [ ] Verify the public repository and deployed URLs before submission.
+- [x] Deploy publicly and verify a complete analysis on the hosted app.
+- [x] Verify the public repository and deployed URLs before submission.
+
+Verified the hosted Mumbai heatwave analysis for 2020–2024: frequency, duration, and intensity charts, plus CSV and PDF downloads. Confirmed the GitHub repository is public and the Render API health endpoint reports MongoDB storage and ready location data.
+
+- Public repository: https://github.com/baigny/climate-hazard-trend-analyzer
+- Hosted frontend: https://climatrace-baigny.netlify.app/
+- Hosted backend: https://climate-hazard-trend-analyzer-q4jl.onrender.com/
 
 ## Scope notes
 

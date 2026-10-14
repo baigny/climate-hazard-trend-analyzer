@@ -3,8 +3,6 @@ dist/
 .venv/
 __pycache__/
 .pytest_cache/
-.env
-.env.*
 !.env.example
 backend/data/cache/
 backend/data/locations/
@@ -28,3 +26,4 @@ Thumbs.db
 *.pem
 *.key
 .netlify/
+config.bat

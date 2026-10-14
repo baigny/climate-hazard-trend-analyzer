@@ -619,13 +619,11 @@ test("MUI location controls submit analysis on click, recheck repeated ranges, a
   await analyze(page);
   await expect.poll(() => requests.at(-1)?.location.name).toBe("Bengaluru");
   await expect(inspector.locator(".map-headline-stat")).toContainText("0");
+  const beforeMapPick = requests.length;
   await page
     .locator(".leaflet-container")
     .click({ position: { x: 170, y: 150 } });
-  await expect(
-    page.getByRole("button", { name: "Analyze trends", exact: true }),
-  ).toBeEnabled();
-  await analyze(page);
+  await expect.poll(() => requests.length).toBe(beforeMapPick + 1);
   await expect.poll(() => requests.at(-1)?.location.name).toBe("Near Mysuru");
   await expect(
     inspector.getByRole("heading", {

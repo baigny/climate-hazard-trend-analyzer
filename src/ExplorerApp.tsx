@@ -42,6 +42,7 @@ export function ExplorerApp({
     setLocationError,
   } = useLocationCatalog(initialCountries, setPlace);
   const placeLookup = useRef<AbortController | null>(null);
+  const mapAnalysisPlace = useRef<Place | null>(null);
   useEffect(() => () => placeLookup.current?.abort(), []);
   const [locationMode, setLocationMode] = useState<LocationMode>("coordinates");
   const [coordinateList, setCoordinateList] = useState("");
@@ -108,6 +109,7 @@ export function ExplorerApp({
     submitAnalysis,
     retryPending,
     abortAnalysis,
+    analyzePlace,
   } = useAnalysis({
     place,
     requestLocation,
@@ -120,6 +122,14 @@ export function ExplorerApp({
     scopeReady,
     invalidRange,
   });
+  // Start after the new selection commits, so selection cleanup cannot cancel it.
+  useEffect(() => {
+    if (place && place === mapAnalysisPlace.current) {
+      mapAnalysisPlace.current = null;
+      if (!invalidRange)
+        void analyzePlace(place, start, end, hazard, "coordinates");
+    }
+  }, [place]);
   async function download(format: "csv" | "pdf") {
     if (!result) return;
     setDownloadBusy(format);
@@ -338,7 +348,10 @@ export function ExplorerApp({
               "Could not identify this place. Please select the map location again.",
             );
           const namedPlace: Place = await response.json();
-          if (!controller.signal.aborted) setPlace(namedPlace);
+          if (!controller.signal.aborted) {
+            mapAnalysisPlace.current = namedPlace;
+            setPlace(namedPlace);
+          }
         } catch (e) {
           if (!controller.signal.aborted)
             setLocationError((e as Error).message);

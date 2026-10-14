@@ -139,6 +139,7 @@ export function useAnalysis({
     error,
     setError,
     submitAnalysis,
+    analyzePlace,
     retryPending,
     abortAnalysis: () => analysisAbort.current?.abort(),
   };

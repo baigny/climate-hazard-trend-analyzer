@@ -21,7 +21,7 @@ export function AnalysisPeriodControls() {
         : p.locationMode === "bounding_box"
           ? "Complete the four valid bounding-box limits to enable Analyze trends."
           : "Choose a city, map point, or valid coordinates to enable Analyze trends."
-      : "Click Analyze trends to apply your location and period. Changing selections does not run an analysis.";
+      : "Click Analyze trends to apply your location and period. Clicking a map location automatically loads its analysis.";
   return (
     <Box
       component="section"

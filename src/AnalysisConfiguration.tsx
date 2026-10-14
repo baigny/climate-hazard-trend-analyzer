@@ -1,4 +1,14 @@
-import { Alert, Box, Divider, Paper, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Checkbox,
+  Divider,
+  FormControlLabel,
+  Paper,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import { CoordinateControls } from "./CoordinateControls";
 import { HazardControls } from "./HazardControls";
@@ -9,11 +19,22 @@ import { useExplorerPresentation } from "./useExplorerPresentation";
 
 export function AnalysisConfiguration() {
   const { p, place, globalCatalog } = useExplorerPresentation();
+  const [hideMapWhenAnalyzing, setHideMapWhenAnalyzing] = useState(true);
   return (
     <Paper
       component="form"
       id="analysis-configuration"
-      action={p.submitAnalysis}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (hideMapWhenAnalyzing) p.setMapOpen(false);
+        p.submitAnalysis(new FormData(event.currentTarget));
+        requestAnimationFrame(() => {
+          document.getElementById("analysis-results")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        });
+      }}
       aria-label="Configure analysis"
       sx={{ p: { xs: 2, md: 3 }, mb: 3 }}
     >
@@ -104,6 +125,15 @@ export function AnalysisConfiguration() {
       )}
       <Divider sx={{ my: 3 }} />
       <AnalysisPeriodControls />
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={hideMapWhenAnalyzing}
+            onChange={(event) => setHideMapWhenAnalyzing(event.target.checked)}
+          />
+        }
+        label="Hide map when analyzing"
+      />
     </Paper>
   );
 }

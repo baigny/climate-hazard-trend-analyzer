@@ -99,6 +99,11 @@ function DashboardLayout() {
           </Typography>
         </Stack>
         <AnalysisConfiguration />
+        {!globalCatalog && (
+          <Button onClick={() => p.setMapOpen((open) => !open)} sx={{ mb: 2 }}>
+            {p.mapOpen ? "Hide map" : "Show map"}
+          </Button>
+        )}
         {p.mapOpen && globalCatalog ? (
           <Alert severity="info" sx={{ mb: 3 }}>
             Worldwide event catalogs are not filtered to a point location. See

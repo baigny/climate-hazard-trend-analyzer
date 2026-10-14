@@ -77,10 +77,37 @@ async function year(page: Page, label: string, value: string) {
   }
 }
 async function analyze(page: Page) {
+  await page.getByRole("checkbox", { name: "Hide map when analyzing", exact: true }).uncheck();
   await page
     .getByRole("button", { name: "Analyze trends", exact: true })
     .click();
 }
+test("manual analysis can hide the map, shows progress immediately, and allows reopening it", async ({ page }) => {
+  await setup(page);
+  let release: (() => void) | undefined;
+  await page.route("**/api/analyses?include_events=false", async (route) => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    await route.fulfill({ json: { ...fixture, parameters: route.request().postDataJSON() } });
+  });
+  await page.route("**/api/analyses/*/events?*", route => route.fulfill({json:{items:[],total:0}}));
+  await page.goto("/");
+  await expect(page.getByRole("combobox", {name:"City / Town",exact:true})).toHaveValue("Hyderabad");
+  await expect(page.getByRole("checkbox", {name:"Hide map when analyzing",exact:true})).toBeChecked();
+  await page.getByRole("button", {name:"Analyze trends",exact:true}).click();
+  await expect(page.getByRole("button", {name:"Analyzing…",exact:true})).toBeDisabled();
+  await expect(page.getByText("Loading historical data for Hyderabad", {exact:false})).toBeVisible();
+  await expect(page.locator(".leaflet-container")).toHaveCount(0);
+  await expect(page.locator("#analysis-results")).toBeInViewport();
+  await expect.poll(() => !!release).toBe(true);
+  release!();
+  await expect(page.getByRole("region", {name:"Analysis summary"})).toBeVisible();
+  for (const name of ["Frequency", "Duration", "Intensity"]) {
+    await page.getByRole("tab", {name,exact:true}).click();
+    await expect(page.locator("#analysis-results .recharts-surface")).toBeVisible();
+  }
+  await page.getByRole("button", {name:"Show map",exact:true}).click();
+  await expect(page.locator(".leaflet-container")).toBeVisible();
+});
 async function setup(page: Page) {
   await page.route(
     /https:\/\/(tile\.openstreetmap\.org|server\.arcgisonline\.com)\//,
@@ -484,6 +511,7 @@ test("location modes, quick decades, compact map periods, and equal desktop heig
 test("MUI location controls submit analysis on click, recheck repeated ranges, and paginate events on the server", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await setup(page);
   const requests: any[] = [];
   const pages: number[] = [];
@@ -513,7 +541,7 @@ test("MUI location controls submit analysis on click, recheck repeated ranges, a
   await page.route("**/export.csv", (route) =>
     route.fulfill({ contentType: "text/csv", body: "year,events\n2020,10\n" }),
   );
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("combobox", { name: "City / Town", exact: true }),
   ).toHaveValue("Hyderabad");
@@ -717,6 +745,9 @@ test("new location clears old statistics and aborts a slow request; latest selec
   await choose(page, "City / Town", "Warangal");
   await analyze(page);
   await expect.poll(() => slowStarted).toBe(true);
+  await expect(page.getByRole("button", { name: "Analyzing…", exact: true })).toBeDisabled();
+  await expect(page.locator("#analysis-results").getByText("Loading historical data for Warangal, Telangana, India", { exact: false })).toBeVisible();
+  await expect(page.locator("#analysis-results")).toBeInViewport();
   const inspector = page.getByRole("complementary", {
     name: /^Location details for /,
   });

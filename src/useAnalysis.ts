@@ -1,4 +1,4 @@
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { API } from "./api";
 import { isGlobalCatalog } from "./hazards";
 import {
@@ -43,13 +43,10 @@ export function useAnalysis({
   const [error, setError] = useState("");
   const requestNumber = useRef(0);
   const analysisAbort = useRef<AbortController | null>(null);
-  const [, submitAnalysis, retryPending] = useActionState(
-    async (_previous: void, _data: FormData) => {
-      if ((scopeReady || isGlobalCatalog(hazard)) && !invalidRange && !busy)
-        await analyzePlace(requestLocation, start, end, hazard);
-    },
-    undefined,
-  );
+  function submitAnalysis(_data: FormData) {
+    if ((scopeReady || isGlobalCatalog(hazard)) && !invalidRange && !busy)
+      void analyzePlace(requestLocation, start, end, hazard);
+  }
   async function analyzePlace(
     location: Place,
     startYear: number,
@@ -140,7 +137,7 @@ export function useAnalysis({
     setError,
     submitAnalysis,
     analyzePlace,
-    retryPending,
+    retryPending: busy,
     abortAnalysis: () => analysisAbort.current?.abort(),
   };
 }
